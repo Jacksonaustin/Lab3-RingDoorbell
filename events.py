@@ -14,9 +14,9 @@ if os.environ.get("DOORBELL_MOCK"):
 # ---------------------------------------------------------------------------
 # Pin config (BCM numbers, not physical pin numbers). Change to match your wiring.
 # ---------------------------------------------------------------------------
-SENSOR_PIN = 17
-LED_PINS = [22, 27]
-BUZZER_PIN = 18
+SENSOR_PIN = 22
+LED_PINS = [18, 26]
+BUZZER_PIN = 17
 
 # Passive buzzer = can play real notes with PWM. Active buzzer = one pitch only.
 # Test: an active buzzer beeps when you just connect it to 3.3V; a passive one doesn't.
