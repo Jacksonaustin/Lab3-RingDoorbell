@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Doorbell</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background: #f5f5f5; color: #222; }
+    section { background: #fff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+    h2 { margin-top: 0; font-size: 1.1rem; }
+    button { padding: 6px 12px; margin: 2px; cursor: pointer; }
+    .piano { display: flex; flex-wrap: wrap; }
+    .piano button { width: 48px; height: 110px; display: flex; align-items: flex-end; justify-content: center; background: #fff; border: 1px solid #333; }
+    .piano button.sharp { background: #222; color: #fff; height: 80px; }
+    #morseOut { font-family: monospace; font-size: 1.4rem; word-break: break-all; min-height: 1.5em; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    td, th { text-align: left; padding: 4px; border-bottom: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <h1>Doorbell</h1>
+
+  <section>
+    <h2>1. Doorbell</h2>
+    <label><input type="checkbox" id="armed"> Armed</label>
+    <div>
+      <button onclick="post('/api/test/leds')">Test LEDs</button>
+      <button onclick="post('/api/test/buzzer')">Test buzzer</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Chimes &amp; Piano</h2>
+    <label>Visitor chime: <select id="chime"></select></label>
+    <button onclick="post('/api/chime/play')">Preview</button>
+    <div class="piano" id="piano"></div>
+  </section>
+
+  <section>
+    <h2>3. Morse</h2>
+    <input id="morseText" placeholder="Message">
+    <label>WPM <input id="wpm" type="number" value="12" min="5" max="30" style="width:4em"></label>
+    <button onclick="sendMorse()">Send</button>
+    <div id="morseOut"></div>
+  </section>
+
+  <section>
+    <h2>4. Event Log</h2>
+    <table>
+      <thead><tr><th>Time</th><th>Type</th><th>Detail</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table>
+  </section>
+
+  <script>
+    // Small helper: POST JSON to the FastAPI server and return the JSON reply
+    async function post(url, body = {}) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    }
+
+    async function loadStatus() {
+      const s = await (await fetch("/api/status")).json();
+      document.getElementById("armed").checked = s.armed;
+
+      const select = document.getElementById("chime");
+      select.innerHTML = s.chimes.map(c => `<option ${c === s.chime ? "selected" : ""}>${c}</option>`).join("");
+
+      const piano = document.getElementById("piano");
+      piano.innerHTML = "";
+      for (const note of s.notes) {
+        const key = document.createElement("button");
+        key.textContent = note;
+        if (note.includes("#")) key.className = "sharp";
+        key.onclick = () => post("/api/piano", { note });
+        piano.appendChild(key);
+      }
+    }
+
+    document.getElementById("armed").onchange = e => post("/api/arm", { armed: e.target.checked });
+    document.getElementById("chime").onchange = e => post("/api/chime", { name: e.target.value });
+
+    async function sendMorse() {
+      const text = document.getElementById("morseText").value;
+      const wpm = Number(document.getElementById("wpm").value);
+      await post("/api/morse", { text, wpm });
+      // TODO: the reply has the full encoding in .morse if you want to show it up front
+    }
+
+    async function poll() {
+      const s = await (await fetch("/api/status")).json();
+      document.getElementById("morseOut").textContent = s.morse_progress;
+
+      const log = await (await fetch("/api/log")).json();
+      document.getElementById("log").innerHTML = log
+        .map(e => `<tr><td>${e.time}</td><td>${e.type}</td><td>${e.detail}</td></tr>`)
+        .join("");
+    }
+
+    loadStatus();
+    setInterval(poll, 500);
+  </script>
+</body>
+</html>
