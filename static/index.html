@@ -12,6 +12,7 @@
     .piano { display: flex; flex-wrap: wrap; }
     .piano button { width: 48px; height: 110px; display: flex; align-items: flex-end; justify-content: center; background: #fff; border: 1px solid #333; }
     .piano button.sharp { background: #222; color: #fff; height: 80px; }
+    #morseOut .todo { color: #aaa; }
     #morseOut { font-family: monospace; font-size: 1.4rem; word-break: break-all; min-height: 1.5em; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
     td, th { text-align: left; padding: 4px; border-bottom: 1px solid #ddd; }
@@ -87,13 +88,22 @@
     async function sendMorse() {
       const text = document.getElementById("morseText").value;
       const wpm = Number(document.getElementById("wpm").value);
-      await post("/api/morse", { text, wpm });
-      // TODO: the reply has the full encoding in .morse if you want to show it up front
+      const reply = await post("/api/morse", { text, wpm });
+      morseFull = reply.morse || "";
     }
+
+    let morseFull = "";  // full encoding; the part already sent is drawn dark, the rest grey
 
     async function poll() {
       const s = await (await fetch("/api/status")).json();
-      document.getElementById("morseOut").textContent = s.morse_progress;
+      const sent = s.morse_progress;
+      const rest = morseFull.startsWith(sent) ? morseFull.slice(sent.length) : "";
+      const out = document.getElementById("morseOut");
+      out.textContent = sent;
+      const todo = document.createElement("span");
+      todo.className = "todo";
+      todo.textContent = rest;
+      out.appendChild(todo);
 
       const log = await (await fetch("/api/log")).json();
       document.getElementById("log").innerHTML = log

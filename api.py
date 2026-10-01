@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import events
 
@@ -26,7 +26,7 @@ class NoteBody(BaseModel):
 
 class MorseBody(BaseModel):
     text: str
-    wpm: int = 12
+    wpm: int = Field(12, ge=5, le=40)  # words per minute
 
 
 @app.get("/")
@@ -59,12 +59,14 @@ def set_armed(body: ArmBody):
 
 @app.post("/api/test/leds")
 def test_leds():
+    events.add_log("test", "LEDs")
     events.run_in_background(events.test_leds)
     return {"ok": True}
 
 
 @app.post("/api/test/buzzer")
 def test_buzzer():
+    events.add_log("test", "buzzer")
     events.run_in_background(events.test_buzzer)
     return {"ok": True}
 
@@ -74,6 +76,7 @@ def select_chime(body: ChimeBody):
     if body.name not in events.CHIMES:
         raise HTTPException(404, "unknown chime")
     events.state["chime"] = body.name
+    events.add_log("chime", "selected " + body.name)
     return {"chime": body.name}
 
 
@@ -93,5 +96,7 @@ def piano(body: NoteBody):
 
 @app.post("/api/morse")
 def morse(body: MorseBody):
+    if not events.to_morse(body.text):
+        raise HTTPException(400, "nothing to send")
     events.run_in_background(events.send_morse, body.text, body.wpm)
     return {"morse": events.to_morse(body.text)}

@@ -24,7 +24,11 @@ PASSIVE_BUZZER = True
 
 LOG_FILE = "doorbell.log"
 
-# TODO: pick a delay and explain why in your write-up.
+# A visitor only rings again after the sensor has seen NOTHING for this long.
+# The timer restarts on every detection, so someone standing at the door (and the
+# sensor flickering on/off while they move) counts as one visit. 5 s is longer than
+# the whole chime plus a person shuffling around, but short enough that a second
+# visitor a little later still gets a ring.
 COOLDOWN_SECONDS = 5.0
 
 sensor = None
@@ -35,7 +39,7 @@ buzzer = None
 state = {
     "armed": True,
     "chime": "front_door",
-    "last_ring": 0.0,      # time.monotonic() of the last visitor that actually rang
+    "last_seen": -COOLDOWN_SECONDS,  # time.monotonic() of the last sensor trigger
     "morse_progress": "",  # dots/dashes sent so far, so the page can show it live
 }
 log = []                   # list of dicts: {"time", "type", "detail"}
@@ -132,30 +136,35 @@ def run_in_background(fn, *args):
 NOTES = {
     "C4": 262, "C#4": 277, "D4": 294, "D#4": 311, "E4": 330, "F4": 349,
     "F#4": 370, "G4": 392, "G#4": 415, "A4": 440, "A#4": 466, "B4": 494,
-    "C5": 523, "D5": 587, "E5": 659, "G5": 784,
+    "C5": 523, "C#5": 554, "D5": 587, "D#5": 622, "E5": 659, "F5": 698,
+    "F#5": 740, "G5": 784, "G#5": 831, "A5": 880, "A#5": 932, "B5": 988,
+    "C6": 1047,
     "REST": 0,
 }
+
+MORSE_FREQ = 700  # Hz, a typical Morse "beep" pitch
 
 # Each chime is a list of (note, seconds).
 CHIMES = {
     "front_door": [("E5", 0.5), ("C5", 0.8)],  # classic "ding-dong"
-    "double_beep": [],                         # TODO
-    "my_chime": [],                            # TODO: your own
+    "double_beep": [("A5", 0.12), ("REST", 0.08), ("A5", 0.12)],
+    "rising_arpeggio": [("C5", 0.15), ("E5", 0.15), ("G5", 0.15), ("C6", 0.4)],
 }
 
 
 def play_chime(name):
-    # TODO: look up CHIMES[name], and for each (note, seconds):
-    #   - turn LEDs on (or toggle them) so they flash with the chime
-    #   - call tone(NOTES[note], seconds)
-    #   - short gap between notes, e.g. time.sleep(0.05)
-    pass
+    for i, (note, seconds) in enumerate(CHIMES[name]):
+        # Alternate which LED is lit on each note so they flash with the chime
+        for j, led in enumerate(leds):
+            led.value = (i + j) % 2 == 0
+        tone(NOTES[note], seconds)
+        time.sleep(0.05)  # small gap so repeated notes don't blur together
+    leds_off()
 
 
 def play_note(note):
-    # TODO: piano key pressed. Passive: tone(NOTES[note], 0.3).
-    # Active buzzer: map each key to its own rhythm pattern instead (document this!).
-    pass
+    # Passive buzzer: PWM at the note's frequency plays the real pitch.
+    tone(NOTES[note], 0.3)
 
 
 def test_leds():
@@ -174,14 +183,16 @@ def test_buzzer():
 def on_visitor():
     """Called by gpiozero every time the IR sensor sees something."""
     now = time.monotonic()
+    quiet_for = now - state["last_seen"]
+    state["last_seen"] = now
+    if quiet_for < COOLDOWN_SECONDS:
+        return  # same visitor still there -> don't ring or log again
 
-    # TODO: cooldown. If less than COOLDOWN_SECONDS since state["last_ring"], return.
-    #       Otherwise update state["last_ring"] = now.
-
-    add_log("visitor", "armed" if state["armed"] else "disarmed")
-
-    # TODO: only chime/flash when armed (visits are logged either way).
-    run_in_background(play_chime, state["chime"])
+    if state["armed"]:
+        add_log("visitor", "rang " + state["chime"])
+        run_in_background(play_chime, state["chime"])
+    else:
+        add_log("visitor", "disarmed - silent")
 
 
 # ---------------------------------------------------------------------------
@@ -200,18 +211,34 @@ MORSE = {
 
 def to_morse(text):
     """'SOS HI' -> '... --- ... / .... ..'  (space between letters, / between words)"""
-    # TODO: uppercase text, split into words, look each letter up in MORSE.
-    return ""
+    words = []
+    for word in text.upper().split():
+        letters = [MORSE[ch] for ch in word if ch in MORSE]  # skip unknown characters
+        if letters:
+            words.append(" ".join(letters))
+    return " / ".join(words)
 
 
 def send_morse(text, wpm):
     # Standard timing: dot = 1 unit, dash = 3, gap inside letter = 1,
     # between letters = 3, between words = 7.  PARIS standard: unit = 1.2 / wpm seconds.
     unit = 1.2 / wpm
+    code = to_morse(text)
     state["morse_progress"] = ""
-    # TODO: walk through to_morse(text). For each symbol:
-    #   '.'  -> LEDs on + tone(freq, unit), LEDs off
-    #   '-'  -> LEDs on + tone(freq, 3 * unit), LEDs off
-    #   after each symbol sleep 1 unit; between letters 3 total; between words 7 total
-    #   append the symbol to state["morse_progress"] so the page can show it
-    add_log("morse", text)
+    add_log("morse", f"{text} ({wpm} wpm)")
+
+    for w, word in enumerate(code.split(" / ")):
+        if w > 0:
+            state["morse_progress"] += " / "
+            time.sleep(7 * unit)
+        for l, letter in enumerate(word.split(" ")):
+            if l > 0:
+                state["morse_progress"] += " "
+                time.sleep(3 * unit)
+            for i, symbol in enumerate(letter):
+                if i > 0:
+                    time.sleep(unit)
+                state["morse_progress"] += symbol
+                leds_on()
+                tone(MORSE_FREQ, unit if symbol == "." else 3 * unit)
+                leds_off()
