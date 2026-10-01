@@ -3,6 +3,7 @@ import os
 import threading
 import time
 from datetime import datetime
+from collections import deque
 
 from gpiozero import LED, Buzzer, DigitalInputDevice, Device, PWMOutputDevice
 
@@ -42,7 +43,8 @@ state = {
     "last_seen": -COOLDOWN_SECONDS,  # time.monotonic() of the last sensor trigger
     "morse_progress": "",  # dots/dashes sent so far, so the page can show it live
 }
-log = []                   # list of dicts: {"time", "type", "detail"}
+LOG_LIMIT = 20
+log = deque(maxlen=LOG_LIMIT)                # list of dicts: {"time", "type", "detail"}
 
 _play_lock = threading.Lock()  # only one sound at a time
 
@@ -58,8 +60,10 @@ def setup():
     leds = [LED(p) for p in LED_PINS]
     buzzer = PWMOutputDevice(BUZZER_PIN) if PASSIVE_BUZZER else Buzzer(BUZZER_PIN)
 
+    load_log()
     sensor.when_activated = on_visitor
     add_log("system", "doorbell started")
+
 
 
 def cleanup():
@@ -72,6 +76,17 @@ def cleanup():
 # ---------------------------------------------------------------------------
 # Event log
 # ---------------------------------------------------------------------------
+
+def load_log():
+    if not os.path.exists(LOG_FILE):
+        return
+    with open(LOG_FILE) as f:
+           last_lines = deque(f, maxlen=LOG_LIMIT)  # reads the file, keeps only the last 20 lines
+    for line in last_lines:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) == 3:  # skip any broken lines
+            log.append({"time": parts[0], "type": parts[1], "detail": parts[2]})
+
 def add_log(kind, detail=""):
     entry = {
         "time": datetime.now().isoformat(sep=" ", timespec="seconds"),
@@ -148,7 +163,7 @@ MORSE_FREQ = 700  # Hz, a typical Morse "beep" pitch
 CHIMES = {
     "front_door": [("E5", 0.5), ("C5", 0.8)],  # classic "ding-dong"
     "double_beep": [("A5", 0.12), ("REST", 0.08), ("A5", 0.12)],
-     "fur_elise": [
+    "fur_elise": [
         ("E5", 0.15), ("D#5", 0.15), ("E5", 0.15), ("D#5", 0.15), ("E5", 0.15),
         ("B4", 0.15), ("D5", 0.15), ("C5", 0.15), ("A4", 0.35),
         ("REST", 0.1), ("C4", 0.15), ("E4", 0.15), ("A4", 0.15), ("B4", 0.35),
