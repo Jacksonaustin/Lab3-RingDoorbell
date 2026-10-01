@@ -2,116 +2,411 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f1ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16181c" media="(prefers-color-scheme: dark)">
   <title>Doorbell</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background: #f5f5f5; color: #222; }
-    section { background: #fff; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
-    h2 { margin-top: 0; font-size: 1.1rem; }
-    button { padding: 6px 12px; margin: 2px; cursor: pointer; }
-    .piano { display: flex; flex-wrap: wrap; }
-    .piano button { width: 48px; height: 110px; display: flex; align-items: flex-end; justify-content: center; background: #fff; border: 1px solid #333; }
-    .piano button.sharp { background: #222; color: #fff; height: 80px; }
-    #morseOut .todo { color: #aaa; }
-    #morseOut { font-family: monospace; font-size: 1.4rem; word-break: break-all; min-height: 1.5em; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    td, th { text-align: left; padding: 4px; border-bottom: 1px solid #ddd; }
-  </style>
-</head>
-<body>
-  <h1>Doorbell</h1>
-
-  <section>
-    <h2>1. Doorbell</h2>
-    <label><input type="checkbox" id="armed"> Armed</label>
-    <div>
-      <button onclick="post('/api/test/leds')">Test LEDs</button>
-      <button onclick="post('/api/test/buzzer')">Test buzzer</button>
-    </div>
-  </section>
-
-  <section>
-    <h2>2. Chimes &amp; Piano</h2>
-    <label>Visitor chime: <select id="chime"></select></label>
-    <button onclick="post('/api/chime/play')">Preview</button>
-    <div class="piano" id="piano"></div>
-  </section>
-
-  <section>
-    <h2>3. Morse</h2>
-    <input id="morseText" placeholder="Message">
-    <label>WPM <input id="wpm" type="number" value="12" min="5" max="30" style="width:4em"></label>
-    <button onclick="sendMorse()">Send</button>
-    <div id="morseOut"></div>
-  </section>
-
-  <section>
-    <h2>4. Event Log</h2>
-    <table>
-      <thead><tr><th>Time</th><th>Type</th><th>Detail</th></tr></thead>
-      <tbody id="log"></tbody>
-    </table>
-  </section>
-
-  <script>
-    // Small helper: POST JSON to the FastAPI server and return the JSON reply
-    async function post(url, body = {}) {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      return res.json();
+    :root {
+      --bg: #f4f1ec;
+      --card: #ffffff;
+      --text: #1d1f23;
+      --muted: #6b6f76;
+      --line: #e6e1d8;
+      --accent: #e0672b;
+      --accent-soft: #fbe6da;
+      --ok: #2f9e62;
+      --ok-soft: #dcf2e5;
+      --off: #9aa0a8;
+      --off-soft: #eceef0;
+      --key-white: #ffffff;
+      --key-black: #22252a;
+      --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.05);
+      --radius: 16px;
     }
-
-    async function loadStatus() {
-      const s = await (await fetch("/api/status")).json();
-      document.getElementById("armed").checked = s.armed;
-
-      const select = document.getElementById("chime");
-      select.innerHTML = s.chimes.map(c => `<option ${c === s.chime ? "selected" : ""}>${c}</option>`).join("");
-
-      const piano = document.getElementById("piano");
-      piano.innerHTML = "";
-      for (const note of s.notes) {
-        const key = document.createElement("button");
-        key.textContent = note;
-        if (note.includes("#")) key.className = "sharp";
-        key.onclick = () => post("/api/piano", { note });
-        piano.appendChild(key);
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181c;
+        --card: #1f2227;
+        --text: #eceef1;
+        --muted: #9aa0a8;
+        --line: #2e3238;
+        --accent: #f0814a;
+        --accent-soft: #3a2a21;
+        --ok: #4cc584;
+        --ok-soft: #1d3428;
+        --off: #7d838b;
+        --off-soft: #2a2e34;
+        --key-white: #e9eaec;
+        --key-black: #0e0f11;
+        --shadow: none;
       }
     }
 
-    document.getElementById("armed").onchange = e => post("/api/arm", { armed: e.target.checked });
-    document.getElementById("chime").onchange = e => post("/api/chime", { name: e.target.value });
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+               max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
+    main { max-width: 760px; margin: 0 auto; display: grid; gap: 16px; }
 
-    async function sendMorse() {
-      const text = document.getElementById("morseText").value;
-      const wpm = Number(document.getElementById("wpm").value);
-      const reply = await post("/api/morse", { text, wpm });
-      morseFull = reply.morse || "";
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px 0; }
+    header h1 { margin: 0; font-size: 1.5rem; letter-spacing: -.01em; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 12px; border-radius: 999px; font-size: .85rem; font-weight: 600;
+      background: var(--ok-soft); color: var(--ok);
+    }
+    .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .pill.off { background: var(--off-soft); color: var(--off); }
+
+    .card { background: var(--card); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); min-width: 0; }
+    .card h2 { margin: 0 0 14px; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+
+    button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .btn {
+      min-height: 44px; padding: 10px 16px; border-radius: 12px; border: 1px solid var(--line);
+      background: var(--card); font-weight: 600; transition: transform .08s, background .15s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row .btn { flex: 1 1 140px; }
+
+    /* Arm switch */
+    .arm {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 14px 16px; margin-bottom: 14px; border-radius: 12px; background: var(--bg); cursor: pointer;
+    }
+    .arm strong { display: block; }
+    .arm small { color: var(--muted); }
+    .switch { position: relative; flex: none; width: 56px; height: 32px; }
+    .switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+    .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--off); transition: background .2s; }
+    .switch span::after {
+      content: ""; position: absolute; top: 3px; left: 3px; width: 26px; height: 26px;
+      border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    }
+    .switch input:checked + span { background: var(--ok); }
+    .switch input:checked + span::after { transform: translateX(24px); }
+    .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Chime chips */
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .chip {
+      min-height: 40px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
+      background: var(--card); font-size: .9rem; font-weight: 600;
+    }
+    .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+    /* Piano */
+    .piano-wrap { margin-top: 18px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+    .piano { --w: 46px; --bw: 30px; position: relative; display: flex; width: max-content; height: 170px; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+    .key {
+      position: relative; border: none; padding: 0 0 10px; display: flex; align-items: flex-end; justify-content: center;
+      font-size: .7rem; font-weight: 600; transition: background .06s;
+    }
+    .key.white {
+      width: var(--w); height: 100%; background: var(--key-white); color: #777;
+      border: 1px solid #c9c9c9; border-left-width: 0; border-radius: 0 0 8px 8px;
+    }
+    .key.white:first-child { border-left-width: 1px; }
+    .key.black {
+      position: absolute; top: 0; z-index: 1; width: var(--bw); height: 60%;
+      background: var(--key-black); color: #bbb; border-radius: 0 0 6px 6px; font-size: .6rem;
+    }
+    .key.white.down { background: var(--accent-soft); color: var(--accent); }
+    .key.black.down { background: var(--accent); color: #fff; }
+    .hint { color: var(--muted); font-size: .8rem; margin: 6px 0 0; }
+
+    /* Morse */
+    .morse-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+    .field {
+      width: 100%; min-height: 44px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--text); font: inherit; font-size: 16px; /* 16px stops iOS zoom */
+    }
+    .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+    .speed { display: flex; align-items: center; gap: 12px; margin: 14px 0 4px; }
+    .speed input { flex: 1; accent-color: var(--accent); }
+    .speed output { min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: .9rem; }
+    #morseOut {
+      margin-top: 12px; min-height: 56px; padding: 12px 14px; border-radius: 12px; background: var(--bg);
+      font: 600 1.35rem/1.5 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .12em; word-break: break-all;
+    }
+    #morseOut .todo { color: var(--muted); opacity: .45; }
+    #morseOut:empty::before { content: "Encoded message appears here"; font: .9rem system-ui, sans-serif; color: var(--muted); letter-spacing: 0; }
+
+    /* Log */
+    .log { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
+    .log li { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .log li:first-child { border-top: none; }
+    .tag {
+      grid-row: span 2; align-self: start; padding: 3px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em; background: var(--off-soft); color: var(--muted);
+    }
+    .tag.visitor { background: var(--accent-soft); color: var(--accent); }
+    .tag.armed { background: var(--ok-soft); color: var(--ok); }
+    .log .detail { font-size: .95rem; overflow-wrap: anywhere; }
+    .log time { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .empty { color: var(--muted); font-size: .9rem; }
+
+    /* Toast */
+    #toast {
+      position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+      background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: .9rem;
+      opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100% - 32px);
+    }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    .grid-2 { display: grid; gap: 16px; }
+    @media (min-width: 720px) {
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 420px) {
+      .piano { --w: 40px; --bw: 26px; height: 150px; }
+      .card { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Doorbell</h1>
+      <span id="statusPill" class="pill">Armed</span>
+    </header>
+
+    <div class="grid-2">
+      <section class="card">
+        <h2>Doorbell</h2>
+        <label class="arm">
+          <span>
+            <strong id="armLabel">Armed</strong>
+            <small id="armHint">Chime and LEDs on visitor</small>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="armed" checked aria-label="Armed">
+            <span></span>
+          </span>
+        </label>
+        <div class="row">
+          <button class="btn" onclick="post('/api/test/leds')">Test LEDs</button>
+          <button class="btn" onclick="post('/api/test/buzzer')">Test buzzer</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Morse code</h2>
+        <form class="morse-form" onsubmit="sendMorse(event)">
+          <input id="morseText" class="field" placeholder="Type a message" autocomplete="off" autocapitalize="characters" enterkeyhint="send">
+          <button class="btn primary" type="submit">Send</button>
+        </form>
+        <div class="speed">
+          <label for="wpm" class="hint" style="margin:0">Speed</label>
+          <input id="wpm" type="range" min="5" max="30" value="12">
+          <output id="wpmOut">12 wpm</output>
+        </div>
+        <div id="morseOut"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Chimes &amp; piano</h2>
+      <div class="chips" id="chimes" role="group" aria-label="Visitor chime"></div>
+      <button class="btn" onclick="post('/api/chime/play')">▶ Preview chime</button>
+      <div class="piano-wrap">
+        <div class="piano" id="piano"></div>
+      </div>
+      <p class="hint" id="pianoHint"></p>
+    </section>
+
+    <section class="card">
+      <h2>Event log</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    // POST JSON to the FastAPI server and return the JSON reply
+    async function post(url, body = {}) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) toast(data.detail && typeof data.detail === "string" ? data.detail : "Request failed");
+        return data;
+      } catch {
+        toast("Can't reach the doorbell");
+        return {};
+      }
     }
 
-    let morseFull = "";  // full encoding; the part already sent is drawn dark, the rest grey
+    let toastTimer;
+    function toast(msg) {
+      $("toast").textContent = msg;
+      $("toast").classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2200);
+    }
+
+    // ---------- Arm switch ----------
+    function showArmed(armed) {
+      $("armed").checked = armed;
+      $("armLabel").textContent = armed ? "Armed" : "Disarmed";
+      $("armHint").textContent = armed ? "Chime and LEDs on visitor" : "Silent, visits still logged";
+      $("statusPill").textContent = armed ? "Armed" : "Disarmed";
+      $("statusPill").classList.toggle("off", !armed);
+    }
+    let armChangedAt = 0;
+    $("armed").onchange = e => {
+      armChangedAt = Date.now();
+      showArmed(e.target.checked);
+      post("/api/arm", { armed: e.target.checked });
+    };
+
+    // ---------- Chimes ----------
+    const pretty = name => name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+    function renderChimes(chimes, selected) {
+      const box = $("chimes");
+      box.innerHTML = "";
+      for (const name of chimes) {
+        const chip = document.createElement("button");
+        chip.className = "chip";
+        chip.textContent = pretty(name);
+        chip.setAttribute("aria-pressed", name === selected);
+        chip.onclick = () => {
+          box.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === chip));
+          post("/api/chime", { name });
+        };
+        box.appendChild(chip);
+      }
+    }
+
+    // ---------- Piano ----------
+    function renderPiano(notes) {
+      const piano = $("piano");
+      piano.innerHTML = "";
+      let whiteCount = 0;
+      for (const note of notes) {
+        const key = document.createElement("button");
+        const black = note.includes("#");
+        key.className = "key " + (black ? "black" : "white");
+        key.textContent = black ? "" : note;
+        key.setAttribute("aria-label", note);
+        if (black) {
+          // sits on the line between the previous white key and the next one
+          key.style.left = `calc(var(--w) * ${whiteCount} - var(--bw) / 2)`;
+        } else {
+          whiteCount++;
+        }
+        // pointerdown fires immediately on touch (no click delay)
+        key.addEventListener("pointerdown", e => {
+          e.preventDefault();
+          key.classList.add("down");
+          post("/api/piano", { note });
+        });
+        const up = () => key.classList.remove("down");
+        key.addEventListener("pointerup", up);
+        key.addEventListener("pointerleave", up);
+        key.addEventListener("pointercancel", up);
+        piano.appendChild(key);
+      }
+      $("pianoHint").textContent = `${notes[0]} – ${notes[notes.length - 1]}` +
+        (piano.parentElement.scrollWidth > piano.parentElement.clientWidth ? " · swipe for more keys" : "");
+    }
+
+    // ---------- Morse ----------
+    let morseFull = "";  // full encoding; the part already sent is drawn dark, the rest faded
+
+    $("wpm").oninput = e => $("wpmOut").textContent = `${e.target.value} wpm`;
+
+    async function sendMorse(e) {
+      e.preventDefault();
+      const text = $("morseText").value.trim();
+      if (!text) return toast("Type a message first");
+      const reply = await post("/api/morse", { text, wpm: Number($("wpm").value) });
+      if (reply.morse) morseFull = reply.morse;
+    }
+
+    function renderMorse(sent) {
+      const out = $("morseOut");
+      const rest = morseFull.startsWith(sent) ? morseFull.slice(sent.length) : "";
+      out.textContent = sent;
+      if (rest) {
+        const todo = document.createElement("span");
+        todo.className = "todo";
+        todo.textContent = rest;
+        out.appendChild(todo);
+      }
+    }
+
+    // ---------- Log ----------
+    let lastLogKey = "";
+    function renderLog(log) {
+      const key = log.length + (log[0] ? log[0].time + log[0].detail : "");
+      if (key === lastLogKey) return;  // nothing new, don't touch the DOM
+      lastLogKey = key;
+
+      const list = $("log");
+      list.innerHTML = "";
+      if (!log.length) {
+        list.innerHTML = '<li class="empty">No events yet</li>';
+        return;
+      }
+      for (const e of log) {
+        const li = document.createElement("li");
+        const tag = document.createElement("span");
+        tag.className = "tag " + e.type;
+        tag.textContent = e.type;
+        const detail = document.createElement("span");
+        detail.className = "detail";
+        detail.textContent = e.detail || pretty(e.type);
+        const time = document.createElement("time");
+        time.textContent = e.time;
+        li.append(tag, detail, time);
+        list.appendChild(li);
+      }
+    }
+
+    // ---------- Polling ----------
+    async function loadStatus() {
+      try {
+        const s = await (await fetch("/api/status")).json();
+        showArmed(s.armed);
+        renderChimes(s.chimes, s.chime);
+        renderPiano(s.notes);
+      } catch {
+        toast("Can't reach the doorbell");
+      }
+    }
 
     async function poll() {
-      const s = await (await fetch("/api/status")).json();
-      const sent = s.morse_progress;
-      const rest = morseFull.startsWith(sent) ? morseFull.slice(sent.length) : "";
-      const out = document.getElementById("morseOut");
-      out.textContent = sent;
-      const todo = document.createElement("span");
-      todo.className = "todo";
-      todo.textContent = rest;
-      out.appendChild(todo);
-
-      const log = await (await fetch("/api/log")).json();
-      document.getElementById("log").innerHTML = log
-        .map(e => `<tr><td>${e.time}</td><td>${e.type}</td><td>${e.detail}</td></tr>`)
-        .join("");
+      try {
+        const [s, log] = await Promise.all([
+          fetch("/api/status").then(r => r.json()),
+          fetch("/api/log").then(r => r.json()),
+        ]);
+        // sync if changed from another device (but not right after we toggled it here)
+        if (s.armed !== $("armed").checked && Date.now() - armChangedAt > 1500) showArmed(s.armed);
+        renderMorse(s.morse_progress);
+        renderLog(log);
+      } catch { /* server restarting; try again next tick */ }
     }
 
     loadStatus();
+    poll();
     setInterval(poll, 500);
   </script>
 </body>
